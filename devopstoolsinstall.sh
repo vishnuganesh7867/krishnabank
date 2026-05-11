@@ -1,8 +1,8 @@
 #!/bin/bash
 
 echo "===================================================="
-echo " DevOps Tools Interactive Installation Script"
-echo " Java17 + Java21 + Git + Maven + Jenkins + Docker + SonarQube + Tomcat"
+echo " DevOps Interactive Installation Script"
+echo " Java17 + Java21 + Jenkins + Docker + SonarQube + Tomcat"
 echo "===================================================="
 
 # ------------------------------------------------
@@ -19,29 +19,13 @@ TOMCAT_FILE="apache-tomcat-${TOMCAT_VERSION}.tar.gz"
 TOMCAT_URL="https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/${TOMCAT_FILE}"
 TOMCAT_HOME="/opt/tomcat"
 
-JAVA17_HOME="/usr/lib/jvm/java-17-amazon-corretto"
-JAVA21_HOME="/usr/lib/jvm/java-21-amazon-corretto"
-
-JAVA_STATUS="Skipped"
-GIT_STATUS="Skipped"
-MAVEN_STATUS="Skipped"
-
-JENKINS_INSTALL_STATUS="Skipped"
-JENKINS_START_STATUS="Skipped"
-
-DOCKER_INSTALL_STATUS="Skipped"
-DOCKER_START_STATUS="Skipped"
-
-SONAR_INSTALL_STATUS="Skipped"
-SONAR_START_STATUS="Skipped"
-
-TOMCAT_INSTALL_STATUS="Skipped"
-TOMCAT_START_STATUS="Skipped"
+JAVA17_HOME="/usr/lib/jvm/java-17-amazon-corretto.x86_64"
+JAVA21_HOME="/usr/lib/jvm/java-21-amazon-corretto.x86_64"
 
 INSTALL_ALL="no"
 
 # ------------------------------------------------
-# Get EC2 Public IP
+# Get Public IP
 # ------------------------------------------------
 
 TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
@@ -104,39 +88,53 @@ else
 
 fi
 
-echo "-------------------------------------------"
-
 # ------------------------------------------------
-# System Pre-check
+# System Details
 # ------------------------------------------------
 
-echo "System Pre-check"
-echo "-------------------------------------------"
+echo ""
+echo "============= SYSTEM DETAILS ============="
 
+echo ""
 echo "Memory:"
 free -h
 
-echo "-------------------------------------------"
-
+echo ""
 echo "Disk:"
 df -h
 
-echo "-------------------------------------------"
-
-echo "CPU Count:"
+echo ""
+echo "CPU:"
 nproc
 
-echo "-------------------------------------------"
+echo ""
+echo "=========================================="
 
 # ------------------------------------------------
 # Increase /tmp Size
 # ------------------------------------------------
 
-echo "Increasing /tmp size..."
-
 mount -o remount,size=2G /tmp 2>/dev/null
 
-echo "-------------------------------------------"
+# ------------------------------------------------
+# Required Packages
+# ------------------------------------------------
+
+echo ""
+echo "Installing required packages..."
+
+yum install -y \
+wget \
+curl \
+git \
+unzip \
+tar \
+lsof \
+net-tools \
+fontconfig \
+ca-certificates
+
+update-ca-trust
 
 # ------------------------------------------------
 # Java Installation
@@ -144,30 +142,24 @@ echo "-------------------------------------------"
 
 if ask_install "Java 17 and Java 21"; then
 
-    echo "Installing Java 17 and Java 21..."
+    echo ""
+    echo "Installing Java 17 and Java 21 JDK..."
 
-    yum install java-17-amazon-corretto java-21-amazon-corretto -y
+    yum install -y \
+    java-17-amazon-corretto-devel \
+    java-21-amazon-corretto-devel
 
-    if [ $? -eq 0 ]; then
+    echo ""
+    echo "Installed Java Directories:"
+    ls -lrt /usr/lib/jvm/
 
-        JAVA_STATUS="Java 17 and Java 21 installed successfully"
+    echo ""
+    echo "Java 17 Version:"
+    ${JAVA17_HOME}/bin/java -version
 
-        echo "$JAVA_STATUS"
-
-        echo "Java 17:"
-        ${JAVA17_HOME}/bin/java -version
-
-        echo ""
-        echo "Java 21:"
-        ${JAVA21_HOME}/bin/java -version
-
-    else
-
-        JAVA_STATUS="Java installation failed"
-
-        echo "$JAVA_STATUS"
-
-    fi
+    echo ""
+    echo "Java 21 Version:"
+    ${JAVA21_HOME}/bin/java -version
 
 else
 
@@ -175,63 +167,23 @@ else
 
 fi
 
-echo "-------------------------------------------"
-
-# ------------------------------------------------
-# Git Installation
-# ------------------------------------------------
-
-if ask_install "Git"; then
-
-    echo "Installing Git..."
-
-    yum install git -y
-
-    if [ $? -eq 0 ]; then
-
-        GIT_STATUS="Git installed successfully - Version: $(git --version | awk '{print $3}')"
-
-        echo "$GIT_STATUS"
-
-    else
-
-        GIT_STATUS="Git installation failed"
-
-        echo "$GIT_STATUS"
-
-    fi
-
-else
-
-    echo "Skipping Git installation..."
-
-fi
-
-echo "-------------------------------------------"
-
 # ------------------------------------------------
 # Maven Installation
 # ------------------------------------------------
 
 if ask_install "Maven"; then
 
+    echo ""
     echo "Installing Maven..."
 
     yum install maven -y
 
-    if [ $? -eq 0 ]; then
+    export JAVA_HOME=${JAVA17_HOME}
+    export PATH=$JAVA_HOME/bin:$PATH
 
-        MAVEN_STATUS="Maven installed successfully - Version: $(mvn -version | head -1 | awk '{print $3}')"
-
-        echo "$MAVEN_STATUS"
-
-    else
-
-        MAVEN_STATUS="Maven installation failed"
-
-        echo "$MAVEN_STATUS"
-
-    fi
+    echo ""
+    echo "Maven Version:"
+    mvn -version
 
 else
 
@@ -239,146 +191,24 @@ else
 
 fi
 
-echo "-------------------------------------------"
-
-# ------------------------------------------------
-# Required Packages
-# ------------------------------------------------
-
-echo "Installing required packages..."
-
-yum install wget unzip tar curl net-tools lsof fontconfig ca-certificates -y
-
-update-ca-trust
-
-echo "-------------------------------------------"
-
-# ------------------------------------------------
-# Jenkins Installation
-# ------------------------------------------------
-
-if ask_install "Jenkins"; then
-
-    echo "Removing old Jenkins..."
-
-    systemctl stop jenkins 2>/dev/null
-    systemctl disable jenkins 2>/dev/null
-
-    yum remove jenkins -y
-
-    rm -rf /var/lib/jenkins
-    rm -rf /etc/yum.repos.d/jenkins.repo
-
-    echo "Configuring latest Jenkins repository..."
-
-    wget --no-check-certificate \
-    -O /etc/yum.repos.d/jenkins.repo \
-    https://pkg.jenkins.io/redhat-stable/jenkins.repo
-
-    rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-
-    echo "Installing latest Jenkins..."
-
-    yum install jenkins -y
-
-    if [ $? -eq 0 ]; then
-
-        echo "Configuring Jenkins to use Java 21..."
-
-        sed -i '/^JENKINS_JAVA_CMD=/d' /etc/sysconfig/jenkins
-
-        echo "JENKINS_JAVA_CMD=${JAVA21_HOME}/bin/java" >> /etc/sysconfig/jenkins
-
-        export JAVA_HOME=${JAVA21_HOME}
-        export PATH=$JAVA_HOME/bin:$PATH
-
-        JENKINS_INSTALL_STATUS="Jenkins installed successfully"
-
-        echo "$JENKINS_INSTALL_STATUS"
-
-        systemctl daemon-reload
-
-        systemctl enable jenkins
-        systemctl start jenkins
-
-        echo "Waiting for Jenkins to start..."
-
-        sleep 40
-
-        if systemctl is-active --quiet jenkins; then
-
-            JENKINS_START_STATUS="Jenkins started successfully"
-
-            echo "$JENKINS_START_STATUS"
-
-        else
-
-            JENKINS_START_STATUS="Jenkins failed to start"
-
-            echo "$JENKINS_START_STATUS"
-
-            journalctl -u jenkins -n 50 --no-pager
-
-        fi
-
-    else
-
-        JENKINS_INSTALL_STATUS="Jenkins installation failed"
-
-        echo "$JENKINS_INSTALL_STATUS"
-
-    fi
-
-else
-
-    echo "Skipping Jenkins installation..."
-
-fi
-
-echo "-------------------------------------------"
-
 # ------------------------------------------------
 # Docker Installation
 # ------------------------------------------------
 
 if ask_install "Docker"; then
 
+    echo ""
     echo "Installing Docker..."
 
     yum install docker -y
 
-    if [ $? -eq 0 ]; then
+    systemctl enable docker
+    systemctl restart docker
 
-        DOCKER_INSTALL_STATUS="Docker installed successfully - Version: $(docker --version | awk '{print $3}' | sed 's/,//')"
+    sleep 5
 
-        echo "$DOCKER_INSTALL_STATUS"
-
-        systemctl enable docker
-        systemctl start docker
-
-        sleep 5
-
-        if systemctl is-active --quiet docker; then
-
-            DOCKER_START_STATUS="Docker started successfully"
-
-            echo "$DOCKER_START_STATUS"
-
-        else
-
-            DOCKER_START_STATUS="Docker failed to start"
-
-            echo "$DOCKER_START_STATUS"
-
-        fi
-
-    else
-
-        DOCKER_INSTALL_STATUS="Docker installation failed"
-
-        echo "$DOCKER_INSTALL_STATUS"
-
-    fi
+    echo ""
+    docker --version
 
 else
 
@@ -386,7 +216,52 @@ else
 
 fi
 
-echo "-------------------------------------------"
+# ------------------------------------------------
+# Jenkins Installation
+# ------------------------------------------------
+
+if ask_install "Jenkins"; then
+
+    echo ""
+    echo "Installing Jenkins..."
+
+    systemctl stop jenkins 2>/dev/null
+
+    yum remove jenkins -y
+
+    rm -rf /var/lib/jenkins
+    rm -rf /etc/yum.repos.d/jenkins.repo
+
+    wget --no-check-certificate \
+    -O /etc/yum.repos.d/jenkins.repo \
+    https://pkg.jenkins.io/redhat-stable/jenkins.repo
+
+    rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+
+    yum install jenkins -y
+
+    echo ""
+    echo "Configuring Jenkins with Java 21..."
+
+    sed -i '/^JENKINS_JAVA_CMD=/d' /etc/sysconfig/jenkins
+
+    echo "JENKINS_JAVA_CMD=${JAVA21_HOME}/bin/java" >> /etc/sysconfig/jenkins
+
+    systemctl daemon-reload
+
+    systemctl enable jenkins
+    systemctl restart jenkins
+
+    echo ""
+    echo "Waiting for Jenkins startup..."
+
+    sleep 40
+
+else
+
+    echo "Skipping Jenkins installation..."
+
+fi
 
 # ------------------------------------------------
 # SonarQube Installation
@@ -394,16 +269,19 @@ echo "-------------------------------------------"
 
 if ask_install "SonarQube"; then
 
+    echo ""
     echo "Installing SonarQube..."
 
     sysctl -w vm.max_map_count=262144
     sysctl -w fs.file-max=65536
 
-    grep -q "vm.max_map_count=262144" /etc/sysctl.conf || echo "vm.max_map_count=262144" >> /etc/sysctl.conf
-    grep -q "fs.file-max=65536" /etc/sysctl.conf || echo "fs.file-max=65536" >> /etc/sysctl.conf
+    grep -q "vm.max_map_count=262144" /etc/sysctl.conf || \
+    echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+
+    grep -q "fs.file-max=65536" /etc/sysctl.conf || \
+    echo "fs.file-max=65536" >> /etc/sysctl.conf
 
     systemctl stop sonarqube 2>/dev/null
-    systemctl disable sonarqube 2>/dev/null
 
     rm -rf /opt/sonarqube*
     rm -f /etc/systemd/system/sonarqube.service
@@ -421,35 +299,32 @@ if ask_install "SonarQube"; then
     wget --no-check-certificate \
     https://binaries.sonarsource.com/Distribution/sonarqube/${SONAR_ZIP}
 
-    if [ -f "/opt/${SONAR_ZIP}" ]; then
+    unzip -q ${SONAR_ZIP}
 
-        unzip -q ${SONAR_ZIP}
+    ln -s ${SONAR_DIR} ${SONAR_LINK}
 
-        ln -s ${SONAR_DIR} ${SONAR_LINK}
+    chown -R sonar:sonar ${SONAR_DIR}
+    chown -h sonar:sonar ${SONAR_LINK}
 
-        chown -R sonar:sonar ${SONAR_DIR}
-        chown -h sonar:sonar ${SONAR_LINK}
-
-        echo "Configuring SonarQube to use Java 17..."
-
-        sed -i '/^#sonar.java.jdkHome=/d' ${SONAR_LINK}/conf/sonar.properties
-
-        echo "sonar.java.jdkHome=${JAVA17_HOME}" >> ${SONAR_LINK}/conf/sonar.properties
-
-        cat > /etc/systemd/system/sonarqube.service <<EOF
+    cat > /etc/systemd/system/sonarqube.service <<EOF
 [Unit]
 Description=SonarQube service
 After=network.target
 
 [Service]
 Type=forking
+
 User=sonar
 Group=sonar
+
 Environment=JAVA_HOME=${JAVA17_HOME}
 Environment=PATH=${JAVA17_HOME}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+
 ExecStart=${SONAR_LINK}/bin/linux-x86-64/sonar.sh start
 ExecStop=${SONAR_LINK}/bin/linux-x86-64/sonar.sh stop
-Restart=on-failure
+
+Restart=always
+
 LimitNOFILE=65536
 LimitNPROC=4096
 
@@ -457,41 +332,15 @@ LimitNPROC=4096
 WantedBy=multi-user.target
 EOF
 
-        systemctl daemon-reload
+    systemctl daemon-reload
 
-        systemctl enable sonarqube
-        systemctl start sonarqube
+    systemctl enable sonarqube
+    systemctl restart sonarqube
 
-        echo "Waiting for SonarQube to start..."
+    echo ""
+    echo "Waiting for SonarQube startup..."
 
-        sleep 40
-
-        if systemctl is-active --quiet sonarqube; then
-
-            SONAR_INSTALL_STATUS="SonarQube installed successfully - Version: ${SONAR_VERSION}"
-
-            SONAR_START_STATUS="SonarQube started successfully"
-
-            echo "$SONAR_INSTALL_STATUS"
-            echo "$SONAR_START_STATUS"
-
-        else
-
-            SONAR_START_STATUS="SonarQube failed to start"
-
-            echo "$SONAR_START_STATUS"
-
-            journalctl -u sonarqube -n 50 --no-pager
-
-        fi
-
-    else
-
-        SONAR_INSTALL_STATUS="SonarQube download failed"
-
-        echo "$SONAR_INSTALL_STATUS"
-
-    fi
+    sleep 50
 
 else
 
@@ -499,15 +348,14 @@ else
 
 fi
 
-echo "-------------------------------------------"
-
 # ------------------------------------------------
 # Tomcat Installation
 # ------------------------------------------------
 
-if ask_install "Apache Tomcat"; then
+if ask_install "Tomcat"; then
 
-    echo "Installing Apache Tomcat..."
+    echo ""
+    echo "Installing Tomcat..."
 
     rm -rf ${TOMCAT_HOME}
     rm -f /opt/${TOMCAT_FILE}
@@ -516,17 +364,19 @@ if ask_install "Apache Tomcat"; then
 
     wget --no-check-certificate ${TOMCAT_URL}
 
-    if [ -f "/opt/${TOMCAT_FILE}" ]; then
+    tar -xvzf ${TOMCAT_FILE}
 
-        tar -xvzf ${TOMCAT_FILE}
+    mv apache-tomcat-${TOMCAT_VERSION} tomcat
 
-        mv apache-tomcat-${TOMCAT_VERSION} tomcat
+    chmod -R 755 ${TOMCAT_HOME}
 
-        chmod +x ${TOMCAT_HOME}/bin/*.sh
+    chmod +x ${TOMCAT_HOME}/bin/*.sh
 
-        echo "Configuring Tomcat users..."
+    # ------------------------------------------------
+    # Configure Tomcat Users
+    # ------------------------------------------------
 
-        cat > ${TOMCAT_HOME}/conf/tomcat-users.xml <<EOF
+    cat > ${TOMCAT_HOME}/conf/tomcat-users.xml <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 
 <tomcat-users>
@@ -543,14 +393,16 @@ if ask_install "Apache Tomcat"; then
 </tomcat-users>
 EOF
 
-        echo "Updating manager context.xml..."
+    # ------------------------------------------------
+    # Remove Tomcat Manager Restriction
+    # ------------------------------------------------
 
-        cat > ${TOMCAT_HOME}/webapps/manager/META-INF/context.xml <<EOF
+    cat > ${TOMCAT_HOME}/webapps/manager/META-INF/context.xml <<EOF
 <Context antiResourceLocking="false" privileged="true">
 
 <!--
 <Valve className="org.apache.catalina.valves.RemoteAddrValve"
-       allow="127\\.\d+\\.\d+\\.\d+|::1|0:0:0:0:0:0:0:1" />
+allow="127\\.\d+\\.\d+\\.\d+|::1|0:0:0:0:0:0:0:1" />
 -->
 
 <Manager sessionAttributeValueClassNameFilter="java\\.lang\\.(?:Boolean|Integer|Long|Number|String)|org\\.apache\\.catalina\\.filters\\.CsrfPreventionFilter\\$LruCache(?:\\$1)?|java\\.util\\.(?:Linked)?HashMap"/>
@@ -558,55 +410,55 @@ EOF
 </Context>
 EOF
 
-        echo "Changing Tomcat port to 9090..."
+    # ------------------------------------------------
+    # Change Tomcat Port
+    # ------------------------------------------------
 
-        sed -i 's/port="8080"/port="9090"/g' ${TOMCAT_HOME}/conf/server.xml
+    sed -i 's/port="8080"/port="9090"/g' \
+    ${TOMCAT_HOME}/conf/server.xml
 
-        PORT_9090_PID=$(lsof -ti:9090)
+    # ------------------------------------------------
+    # Configure Java 17 for Tomcat
+    # ------------------------------------------------
 
-        if [ ! -z "$PORT_9090_PID" ]; then
+    cat > ${TOMCAT_HOME}/bin/setenv.sh <<EOF
+export JAVA_HOME=${JAVA17_HOME}
+export PATH=\$JAVA_HOME/bin:\$PATH
+EOF
 
-            echo "Port 9090 already in use. Killing process..."
+    chmod +x ${TOMCAT_HOME}/bin/setenv.sh
 
-            kill -9 $PORT_9090_PID
+    # ------------------------------------------------
+    # Kill Existing Process
+    # ------------------------------------------------
 
-        fi
+    pkill -f tomcat
 
-        echo "Starting Tomcat..."
+    sleep 5
 
-        export JAVA_HOME=${JAVA17_HOME}
-        export PATH=$JAVA_HOME/bin:$PATH
+    PORT_9090_PID=$(lsof -ti:9090)
 
-        ${TOMCAT_HOME}/bin/startup.sh
+    if [ ! -z "$PORT_9090_PID" ]; then
 
-        sleep 10
-
-        if lsof -i:9090 >/dev/null 2>&1; then
-
-            TOMCAT_INSTALL_STATUS="Tomcat installed successfully - Version: ${TOMCAT_VERSION}"
-
-            TOMCAT_START_STATUS="Tomcat started successfully"
-
-            echo "$TOMCAT_INSTALL_STATUS"
-            echo "$TOMCAT_START_STATUS"
-
-        else
-
-            TOMCAT_START_STATUS="Tomcat failed to start"
-
-            echo "$TOMCAT_START_STATUS"
-
-            tail -50 ${TOMCAT_HOME}/logs/catalina.out
-
-        fi
-
-    else
-
-        TOMCAT_INSTALL_STATUS="Tomcat download failed"
-
-        echo "$TOMCAT_INSTALL_STATUS"
+        kill -9 $PORT_9090_PID
 
     fi
+
+    # ------------------------------------------------
+    # Start Tomcat
+    # ------------------------------------------------
+
+    echo ""
+    echo "Starting Tomcat..."
+
+    export JAVA_HOME=${JAVA17_HOME}
+    export PATH=$JAVA_HOME/bin:$PATH
+
+    echo "JAVA_HOME=$JAVA_HOME"
+
+    ${TOMCAT_HOME}/bin/startup.sh
+
+    sleep 15
 
 else
 
@@ -614,43 +466,115 @@ else
 
 fi
 
-echo "-------------------------------------------"
-echo "Installation Completed"
-echo "-------------------------------------------"
+# ------------------------------------------------
+# Final Status
+# ------------------------------------------------
 
 echo ""
 echo "============= FINAL STATUS ============="
 
+echo ""
 echo "EC2 Public IP: ${PUBLIC_IP}"
 
-echo ""
-echo "$JAVA_STATUS"
-echo "$GIT_STATUS"
-echo "$MAVEN_STATUS"
+# ------------------------------------------------
+# Java Status
+# ------------------------------------------------
 
 echo ""
-echo "$JENKINS_INSTALL_STATUS"
-echo "$JENKINS_START_STATUS"
 
-if [[ "$JENKINS_START_STATUS" == "Jenkins started successfully" ]]; then
+if [ -d "${JAVA17_HOME}" ]; then
 
-    echo "Jenkins URL: http://${PUBLIC_IP}:8080"
+    echo "Java 17 installed successfully"
 
-    echo "Jenkins password location: /var/lib/jenkins/secrets/initialAdminPassword"
+else
 
-    echo "Jenkins Java Version: Java 21"
+    echo "Java 17 not installed"
 
 fi
 
-echo ""
-echo "$DOCKER_INSTALL_STATUS"
-echo "$DOCKER_START_STATUS"
+if [ -d "${JAVA21_HOME}" ]; then
+
+    echo "Java 21 installed successfully"
+
+else
+
+    echo "Java 21 not installed"
+
+fi
+
+# ------------------------------------------------
+# Maven Status
+# ------------------------------------------------
 
 echo ""
-echo "$SONAR_INSTALL_STATUS"
-echo "$SONAR_START_STATUS"
 
-if [[ "$SONAR_START_STATUS" == "SonarQube started successfully" ]]; then
+if command -v mvn >/dev/null 2>&1; then
+
+    export JAVA_HOME=${JAVA17_HOME}
+    export PATH=$JAVA_HOME/bin:$PATH
+
+    echo "Maven installed successfully"
+
+    mvn -version | head -1
+
+else
+
+    echo "Maven not installed"
+
+fi
+
+# ------------------------------------------------
+# Docker Status
+# ------------------------------------------------
+
+echo ""
+
+if systemctl is-active --quiet docker; then
+
+    echo "Docker started successfully"
+
+    docker --version
+
+else
+
+    echo "Docker failed to start"
+
+fi
+
+# ------------------------------------------------
+# Jenkins Status
+# ------------------------------------------------
+
+echo ""
+
+if systemctl is-active --quiet jenkins; then
+
+    echo "Jenkins started successfully"
+
+    echo "Jenkins URL: http://${PUBLIC_IP}:8080"
+
+    echo "Jenkins password location:"
+    echo "/var/lib/jenkins/secrets/initialAdminPassword"
+
+    echo "Jenkins Java: Java 21"
+
+else
+
+    echo "Jenkins failed to start"
+
+    journalctl -u jenkins -n 30 --no-pager
+
+fi
+
+# ------------------------------------------------
+# SonarQube Status
+# ------------------------------------------------
+
+echo ""
+
+if systemctl is-active --quiet sonarqube; then
+
+    echo "SonarQube started successfully"
 
     echo "SonarQube URL: http://${PUBLIC_IP}:9000"
 
@@ -658,31 +582,76 @@ if [[ "$SONAR_START_STATUS" == "SonarQube started successfully" ]]; then
 
     echo "SonarQube password: admin"
 
-    echo "SonarQube Java Version: Java 17"
+    echo "SonarQube Java: Java 17"
+
+else
+
+    echo "SonarQube failed to start"
+
+    echo ""
+    echo "SonarQube Logs:"
+
+    tail -50 ${SONAR_LINK}/logs/sonar.log 2>/dev/null
 
 fi
 
-echo ""
-echo "$TOMCAT_INSTALL_STATUS"
-echo "$TOMCAT_START_STATUS"
+# ------------------------------------------------
+# Tomcat Status
+# ------------------------------------------------
 
-if [[ "$TOMCAT_START_STATUS" == "Tomcat started successfully" ]]; then
+echo ""
+
+if lsof -i:9090 >/dev/null 2>&1; then
+
+    echo "Tomcat started successfully"
 
     echo "Tomcat URL: http://${PUBLIC_IP}:9090"
 
-    echo "Tomcat Manager URL: http://${PUBLIC_IP}:9090/manager/html"
+    echo "Tomcat Manager URL:"
+    echo "http://${PUBLIC_IP}:9090/manager/html"
 
     echo "Tomcat Username: admin"
 
     echo "Tomcat Password: admin"
 
-    echo "Tomcat Installed Path: /opt/tomcat"
+    echo "Tomcat Java: Java 17"
+
+else
+
+    echo "Tomcat failed to start"
+
+    echo ""
+
+    if [ -f "${TOMCAT_HOME}/logs/catalina.out" ]; then
+
+        echo "Tomcat Logs:"
+        tail -100 ${TOMCAT_HOME}/logs/catalina.out
+
+    else
+
+        echo "Tomcat log file not found"
+
+    fi
 
 fi
+
+# ------------------------------------------------
+# Port Status
+# ------------------------------------------------
+
+echo ""
+echo "============= PORT STATUS ============="
+
+ss -tulnp | grep -E '8080|9000|9090'
+
+# ------------------------------------------------
+# Resource Summary
+# ------------------------------------------------
 
 echo ""
 echo "============= SYSTEM RESOURCE SUMMARY ============="
 
+echo ""
 echo "Memory:"
 free -h
 
@@ -694,4 +663,5 @@ echo ""
 echo "CPU Count:"
 nproc
 
-echo "===================================================="
+echo ""
+echo "==================================================="
